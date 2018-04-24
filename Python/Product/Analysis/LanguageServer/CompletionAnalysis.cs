@@ -30,15 +30,15 @@ namespace Microsoft.PythonTools.Analysis.LanguageServer {
         private readonly Node _node;
         private readonly Node _statement;
         private readonly ScopeStatement _scope;
-        private readonly ILogger _log;
+        private readonly Action<FormattableString> _trace;
 
-        public CompletionAnalysis(ModuleAnalysis analysis, PythonAst tree, SourceLocation position, GetMemberOptions opts, ILogger log) {
+        public CompletionAnalysis(ModuleAnalysis analysis, PythonAst tree, SourceLocation position, GetMemberOptions opts, Action<FormattableString> trace) {
             Analysis = analysis ?? throw new ArgumentNullException(nameof(analysis));
             Tree = tree ?? throw new ArgumentNullException(nameof(tree));
             Position = position;
             Index = Tree.LocationToIndex(Position);
             Options = opts;
-            _log = log;
+            _trace = trace;
 
             var finder = new ExpressionFinder(Tree, new GetExpressionOptions {
                 Names = true,
@@ -52,6 +52,8 @@ namespace Microsoft.PythonTools.Analysis.LanguageServer {
         }
 
         private static readonly IEnumerable<CompletionItem> Empty = Enumerable.Empty<CompletionItem>();
+
+        private void TraceMessage(FormattableString msg) => _trace?.Invoke(msg);
 
         public ModuleAnalysis Analysis { get; }
         public PythonAst Tree { get; }
@@ -71,12 +73,12 @@ namespace Microsoft.PythonTools.Analysis.LanguageServer {
             if (string.IsNullOrEmpty(expr)) {
                 return null;
             }
-            _log.TraceMessage($"Completing expression '{expr}'");
+            TraceMessage($"Completing expression '{expr}'");
             return Analysis.GetMembers(expr, Position, Options).Select(ToCompletionItem);
         }
 
         public IEnumerable<CompletionItem> GetCompletions() {
-            var opts = Options | GetMemberOptions.ForEval;
+            var opts = Options;
             bool allowKeywords = true, allowArguments = true;
             List<CompletionItem> additional = null;
 
@@ -125,7 +127,7 @@ namespace Microsoft.PythonTools.Analysis.LanguageServer {
         private IEnumerable<CompletionItem> GetCompletionsFromMembers(ref GetMemberOptions opts) {
             var finder = new ExpressionFinder(Tree, GetExpressionOptions.EvaluateMembers);
             if (finder.GetExpression(Index) is Expression expr) {
-                _log.TraceMessage($"Completing expression {expr.ToCodeString(Tree, CodeFormattingOptions.Traditional)}");
+                TraceMessage($"Completing expression {expr.ToCodeString(Tree, CodeFormattingOptions.Traditional)}");
                 ParentExpression = expr;
                 return Analysis.GetMembers(expr, Position, opts, null).Select(ToCompletionItem);
             }
@@ -447,7 +449,7 @@ namespace Microsoft.PythonTools.Analysis.LanguageServer {
                 }
             }
 
-            _log.TraceMessage($"Completing all names");
+            TraceMessage($"Completing all names");
             var members = Analysis.GetAllAvailableMembers(Position, opts);
 
             if (allowArguments) {
@@ -462,7 +464,7 @@ namespace Microsoft.PythonTools.Analysis.LanguageServer {
                         .Select(n => new MemberResult($"{n}=", PythonMemberType.NamedArgument));
 
                     argNames = argNames.MaybeEnumerate().ToArray();
-                    _log.TraceMessage($"Including {argNames.Count()} named arguments");
+                    TraceMessage($"Including {argNames.Count()} named arguments");
 
                     members = members?.Concat(argNames) ?? argNames;
                 }

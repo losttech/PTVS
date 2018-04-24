@@ -17,6 +17,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.DsTools.Core.Disposables;
@@ -156,20 +157,8 @@ namespace Microsoft.PythonTools.VsCode {
 
         #region Workspace
         [JsonRpcMethod("workspace/didChangeConfiguration")]
-        public Task DidChangeConfiguration(JToken token) {
-            var settings = new LanguageServerSettings();
-
-            var rootSection = token["settings"];
-            var pythonSection = rootSection?["python"];
-            var autoComplete = pythonSection?["autoComplete"];
-            if (autoComplete != null) {
-                var showAdvancedMembers = autoComplete["showAdvancedMembers"] as JValue;
-                settings.SuppressAdvancedMembers = showAdvancedMembers == null || 
-                    (showAdvancedMembers.Type == JTokenType.Boolean && !showAdvancedMembers.ToObject<bool>());
-            }
-            var p = new DidChangeConfigurationParams() { settings = settings };
-            return _server.DidChangeConfiguration(p);
-        }
+        public Task DidChangeConfiguration(JToken token)
+           => _server.DidChangeConfiguration(token.ToObject<DidChangeConfigurationParams>());
 
         [JsonRpcMethod("workspace/didChangeWatchedFiles")]
         public Task DidChangeWatchedFiles(JToken token)
