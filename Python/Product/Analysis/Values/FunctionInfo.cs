@@ -450,69 +450,75 @@ namespace Microsoft.PythonTools.Analysis.Values {
             }
         }
 
-        public override IEnumerable<OverloadResult> Overloads {
-            get {
-                if (_functionAttrs != null && _functionAttrs.TryGetValue("__wrapped__", out VariableDef wrapped)) {
-                    foreach (var o in wrapped.TypesNoCopy.SelectMany(n => n.Overloads)) {
-                        yield return o;
+        public override IEnumerable<OverloadResult> Overloads => this.EnumerateOverloads(new HashSet<FunctionInfo>());
+
+        IEnumerable<OverloadResult> EnumerateOverloads(HashSet<FunctionInfo> beenThrough) {
+            if (!beenThrough.Add(this))
+                yield break;
+       
+            if (_functionAttrs != null && _functionAttrs.TryGetValue("__wrapped__", out VariableDef wrapped)) {
+                foreach (var o in wrapped.TypesNoCopy.SelectMany(wrappedValue =>
+                    wrappedValue is FunctionInfo function
+                        ? function.EnumerateOverloads(beenThrough)
+                        : wrappedValue.Overloads)) {
+                    yield return o;
+                }
+            }
+
+            var parameterSets = new List<AccumulatedOverloadResult>();
+
+            var units = new HashSet<AnalysisUnit>();
+            units.Add(AnalysisUnit);
+            if (_callsWithClosure != null) {
+                units.UnionWith(_callsWithClosure.Values);
+            }
+
+            foreach (var unit in units) {
+                var names = FunctionDefinition.ParametersInternal.Select(MakeParameterName).ToArray();
+
+                var vars = FunctionDefinition.ParametersInternal.Select(p => {
+                    VariableDef param;
+                    if (unit != AnalysisUnit && unit.Scope.TryGetVariable(p.Name, out param)) {
+                        return param.Types.Resolve(unit);
+                    } else if (_analysisUnit._scope is FunctionScope fs) {
+                        return fs.GetParameter(p.Name)?.Types.Resolve(unit) ?? AnalysisSet.Empty;
                     }
-                }
+                    return AnalysisSet.Empty;
+                }).ToArray();
 
-                var parameterSets = new List<AccumulatedOverloadResult>();
+                var defaults = FunctionDefinition.ParametersInternal.Select(p => GetDefaultValue(unit.State, p, DeclaringModule.Tree)).ToArray();
 
-                var units = new HashSet<AnalysisUnit>();
-                units.Add(AnalysisUnit);
-                if (_callsWithClosure != null) {
-                    units.UnionWith(_callsWithClosure.Values);
-                }
+                var rtypes = (unit.Scope as FunctionScope)?.ReturnValue
+                    .TypesNoCopy
+                    .Resolve(unit, new ResolutionContext {
+                        Caller = this,
+                        LazyCallArgs = new Lazy<ArgumentSet>(() => new ArgumentSet(vars, null, null, null)),
+                        ResolveFully = true
+                    }, out _)
+                    .GetShortDescriptions()
+                    .ToArray();
 
-                foreach (var unit in units) {
-                    var names = FunctionDefinition.ParametersInternal.Select(MakeParameterName).ToArray();
-
-                    var vars = FunctionDefinition.ParametersInternal.Select(p => {
-                        VariableDef param;
-                        if (unit != AnalysisUnit && unit.Scope.TryGetVariable(p.Name, out param)) {
-                            return param.Types.Resolve(unit);
-                        } else if (_analysisUnit._scope is FunctionScope fs) {
-                            return fs.GetParameter(p.Name)?.Types.Resolve(unit) ?? AnalysisSet.Empty;
+                bool needNewSet = true;
+                foreach (var set in parameterSets) {
+                    if (set.ParameterCount == names.Length) {
+                        if (set.TryAddOverload(null, null, names, vars, defaults, rtypes)) {
+                            needNewSet = false;
+                            break;
                         }
-                        return AnalysisSet.Empty;
-                    }).ToArray();
-
-                    var defaults = FunctionDefinition.ParametersInternal.Select(p => GetDefaultValue(unit.State, p, DeclaringModule.Tree)).ToArray();
-
-                    var rtypes = (unit.Scope as FunctionScope)?.ReturnValue
-                        .TypesNoCopy
-                        .Resolve(unit, new ResolutionContext {
-                            Caller = this,
-                            LazyCallArgs = new Lazy<ArgumentSet>(() => new ArgumentSet(vars, null, null, null)),
-                            ResolveFully = true
-                        }, out _)
-                        .GetShortDescriptions()
-                        .ToArray();
-
-                    bool needNewSet = true;
-                    foreach (var set in parameterSets) {
-                        if (set.ParameterCount == names.Length) {
-                            if (set.TryAddOverload(null, null, names, vars, defaults, rtypes)) {
-                                needNewSet = false;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (needNewSet) {
-                        var set = new AccumulatedOverloadResult(FunctionDefinition.Name, Documentation, names.Length);
-                        parameterSets.Add(set);
-                        set.TryAddOverload(null, null, names, vars, defaults, rtypes);
                     }
                 }
 
-                foreach (var s in parameterSets) {
-                    var o = s.ToOverloadResult();
-                    if (o != null) {
-                        yield return o;
-                    }
+                if (needNewSet) {
+                    var set = new AccumulatedOverloadResult(FunctionDefinition.Name, Documentation, names.Length);
+                    parameterSets.Add(set);
+                    set.TryAddOverload(null, null, names, vars, defaults, rtypes);
+                }
+            }
+
+            foreach (var s in parameterSets) {
+                var o = s.ToOverloadResult();
+                if (o != null) {
+                    yield return o;
                 }
             }
         }
