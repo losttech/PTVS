@@ -9,7 +9,7 @@ indent_style = space
 [*.{cs,csx,vb,vbx}] 
 indent_size = 4 
 insert_final_newline = true 
-charset = utf-8-bom 
+charset = utf-8
 ############################### 
 # .NET Coding Conventions     # 
 ############################### 
@@ -89,7 +89,7 @@ csharp_style_inlined_variable_declaration = true:suggestion
 # C# Formatting Rules         # 
 ############################### 
 # New line preferences 
-csharp_new_line_before_open_brace = all 
+csharp_new_line_before_open_brace = none 
 csharp_new_line_before_else = true 
 csharp_new_line_before_catch = true 
 csharp_new_line_before_finally = true 
