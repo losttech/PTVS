@@ -1,4 +1,4 @@
-﻿// Python Tools for Visual Studio
+// Python Tools for Visual Studio
 // Copyright(c) Microsoft Corporation
 // All rights reserved.
 //
@@ -60,6 +60,37 @@ b = a.virt()
             analyzer.WaitForAnalysis();
 
             analyzer.AssertIsInstance("b", BuiltinTypeId.Int);
+        }
+
+        [TestMethod]
+        public void AbstractPropertyReturnTypeIgnored() {
+            var python = (PythonPaths.Python36_x64 ?? PythonPaths.Python36);
+            python.AssertInstalled();
+            var analyzer = CreateAnalyzer(
+                new AstPythonInterpreterFactory(python.Configuration, new InterpreterFactoryCreationOptions { WatchFileSystem = false })
+            );
+            analyzer.AddModule("test-module", @"
+import abc
+
+class A:
+    @abc.abstractproperty
+    def virt():
+        pass
+
+class B(A):
+    @property
+    def virt():
+        return 42
+
+a = A()
+b = a.virt
+");
+
+            // this example is artificial, as generally one should not be able to call A.virt
+            // but it is the easiest way to reproduce
+            analyzer.WaitForAnalysis();
+
+            analyzer.AssertIsInstance("a.virt", BuiltinTypeId.Int);
         }
     }
 }
